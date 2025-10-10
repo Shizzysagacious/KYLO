@@ -1,0 +1,13 @@
+[Unit]
+Description=Kylo Proxy Server
+After=network.target
+
+[Service]
+User=kylo
+Group=kylo
+WorkingDirectory=/opt/kylo/server
+EnvironmentFile=/etc/kylo/kylo.env
+ExecStart=/opt/kylo/.venv/bin/gunicorn -w 4 -k uvicorn.workers.UvicornWorker server.proxy:app
+
+[Install]
+WantedBy=multi-user.target

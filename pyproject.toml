@@ -1,0 +1,15 @@
+[project]
+name = "kylo"
+version = "1.0.0"
+description = "Kylo - AI-powered security code auditor and project alignment validator"
+readme = "README.md"
+requires-python = ">=3.8"
+
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0"
+]
+
+[project.scripts]
+kylo = "kylo.cli:cli"
