@@ -1,15 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kylo"
 version = "1.0.0"
-description = "Kylo - AI-powered security code auditor and project alignment validator"
+description = "AI-powered security code auditor and project alignment validator"
 readme = "README.md"
 requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Leon Musk", email = "alabimuiz0@gmail.com"}
+]
+keywords = ["security", "code-audit", "vulnerability-scanner", "static-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 
 dependencies = [
     "click>=8.0",
     "rich>=13.0.0",
-    "python-dotenv>=1.0.0"
+    "python-dotenv>=1.0.0",
+    "cryptography>=42.0.0",
+    "requests>=2.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
 ]
 
 [project.scripts]
 kylo = "kylo.cli:cli"
+
+[project.urls]
+Homepage = "https://kylo.pxxl.click"
+Documentation = "https://kylo.pxxl.click"
+Repository = "https://github.com/Shizzysagacious/kylo"
+Issues = "https://github.com/yourusername/kylo/issues"
