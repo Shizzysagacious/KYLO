@@ -28,7 +28,7 @@ pip install kylo
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/kylo.git
+git clone https://github.com/Shizzysagacious/kylo.git
 cd kylo
 pip install -e .
 ```
@@ -239,9 +239,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - 🌐 Website: [kylo.pxxl.click](https://kylo.pxxl.click)
-- 📧 Email: support@pxxl.click
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/kylo/issues)
+- 📧 Email: kylodotai@gmail.com
 - 💬 Discussions: [GitHub Discussions](https://github.com/Shizzysagacous/kylo/discussions)
-**Made with ❤️ by the PXXL team**
+**Made with ❤️ by the KYLO team**
 
 *Ship safer code, faster.*
