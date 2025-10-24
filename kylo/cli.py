@@ -7,11 +7,9 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.markdown import Markdown
-from rich.live import Live
-from rich.layout import Layout
 from pathlib import Path
 
-from .auditor import init_project, audit_path, secure_target
+from .auditor import init_project, audit_path, secure_target, AuditError
 from .readme_manager import create_readme_interactive
 from .secure_storage import SecureStorage
 from .usage_tracker import UsageTracker
@@ -70,7 +68,7 @@ def init(ctx, path):
         kylo_dir.mkdir(parents=True, exist_ok=True)
         
         progress.update(task, description=f"[{PRIMARY}]Creating .kylo directory...")
-        time.sleep(0.5)  # Visual feedback
+        time.sleep(0.5)
         
         readme = kylo_root / 'README.md'
         if not readme.exists():
@@ -85,7 +83,7 @@ def init(ctx, path):
     console.print(Panel(
         f"[green]✓[/green] KYLO initialized successfully!\n\n"
         f"Next steps:\n"
-        f"  • Run [bold]kylo audit[/bold] to scan your code\n"
+        f"  • Run [bold]kylo audit <file.py>[/bold] to scan your code\n"
         f"  • Run [bold]kylo secure <target>[/bold] for security hardening\n"
         f"  • Run [bold]kylo stats[/bold] to view usage statistics",
         title=f"[bold {ACCENT}]Ready to Secure Your Code[/bold {ACCENT}]",
@@ -221,6 +219,105 @@ def stats(ctx):
     
     console.print(limits_table)
 
+# ADD THIS TO cli.py after the stats() command
+
+@cli.command('context')
+@click.pass_context
+def context(ctx):
+    """View audit history and context"""
+    from .auditor import get_context_summary
+    from .utils import load_json
+    
+    kylo_root = Path(os.getcwd())
+    kylo_dir = kylo_root / '.kylo'
+    
+    if not kylo_dir.exists():
+        console.print(Panel(
+            "[yellow]⚠ KYLO not initialized in this directory[/yellow]\n\n"
+            "Please run [bold]kylo init[/bold] first.",
+            border_style="yellow"
+        ))
+        return
+    
+    context_file = kylo_dir / 'context.json'
+    if not context_file.exists():
+        console.print("[yellow]No audit history found yet. Run [bold]kylo audit[/bold] first.[/yellow]")
+        return
+    
+    context_data = load_json(str(context_file))
+    
+    # Summary Panel
+    summary = get_context_summary(os.getcwd())
+    if summary:
+        console.print(Panel(
+            f"[bold]Total Audits:[/bold] {summary['total_audits']}\n"
+            f"[bold]Last Audit:[/bold] {summary['last_audit_str']}\n"
+            f"[bold]Files Tracked:[/bold] {summary['files_tracked']}",
+            title=f"[bold {PRIMARY}]Audit Context Summary[/bold {PRIMARY}]",
+            border_style=PRIMARY
+        ))
+    
+    # Files Table
+    files_tracked = context_data.get('files_tracked', {})
+    if files_tracked:
+        console.print(f"\n[bold {ACCENT}]Tracked Files:[/bold {ACCENT}]")
+        
+        table = Table(show_header=True, header_style=f"bold {PRIMARY}")
+        table.add_column("File", style=ACCENT)
+        table.add_column("Audits", justify="center")
+        table.add_column("Last Issues", justify="center")
+        table.add_column("Last Audited", justify="right")
+        
+        for file_path, file_data in sorted(files_tracked.items()):
+            last_audited = file_data.get('last_audited', 0)
+            if last_audited:
+                days_ago = (time.time() - last_audited) / 86400
+                if days_ago < 1:
+                    time_str = "today"
+                elif days_ago < 2:
+                    time_str = "yesterday"
+                else:
+                    time_str = f"{int(days_ago)}d ago"
+            else:
+                time_str = "never"
+            
+            last_issues = file_data.get('last_issues', 0)
+            issue_color = "red" if last_issues > 0 else "green"
+            
+            # Shorten file path for display
+            display_path = file_path if len(file_path) < 50 else "..." + file_path[-47:]
+            
+            table.add_row(
+                display_path,
+                str(file_data.get('audit_count', 0)),
+                f"[{issue_color}]{last_issues}[/{issue_color}]",
+                time_str
+            )
+        
+        console.print(table)
+    
+    # Vulnerability History
+    vuln_history = context_data.get('vulnerability_history', [])
+    if vuln_history and len(vuln_history) > 1:
+        console.print(f"\n[bold {ACCENT}]Recent Audit Trend:[/bold {ACCENT}]")
+        
+        # Show last 5 audits
+        recent = vuln_history[-5:]
+        for i, audit in enumerate(recent, 1):
+            timestamp = audit.get('timestamp', 0)
+            total_issues = audit.get('total_issues', 0)
+            files_audited = audit.get('files_audited', 0)
+            
+            date_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp))
+            issue_color = "red" if total_issues > 0 else "green"
+            
+            console.print(
+                f"  [{i}] {date_str} - "
+                f"[{issue_color}]{total_issues} issues[/{issue_color}] in {files_audited} files"
+            )
+    
+    console.print(f"\n[dim]💡 Tip: Run [bold]kylo audit .[/bold] to update your context[/dim]")    
+
 
 @cli.command()
 @click.argument('target', required=False)
@@ -232,39 +329,66 @@ def audit(ctx, target=None):
     cwd = os.getcwd()
     target_path = target or cwd
     
+    # Check if .kylo directory exists
+    kylo_dir = Path(cwd) / '.kylo'
+    if not kylo_dir.exists():
+        console.print(Panel(
+            "[yellow]⚠ KYLO not initialized in this directory[/yellow]\n\n"
+            "Please run [bold]kylo init[/bold] first to set up your project.",
+            border_style="yellow"
+        ))
+        return
+    
     console.print(f"\n[{PRIMARY}]Starting security audit of:[/{PRIMARY}] [bold]{target_path}[/bold]\n")
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task(f"[{PRIMARY}]🔍 Scanning files...", total=None)
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task(f"[{PRIMARY}]🔍 Analyzing target...", total=None)
+            
+            progress.update(task, description=f"[{PRIMARY}]📂 Validating files...")
+            time.sleep(0.3)
+            
+            progress.update(task, description=f"[{PRIMARY}]🔍 Running security checks...")
+            report = audit_path(target_path)
+            
+            # Check for errors
+            if "error" in report:
+                progress.update(task, description=f"[red]✗ Audit failed[/red]")
+                return
+            
+            progress.update(task, description=f"[{ACCENT}]✓ Audit complete!")
         
-        # Simulated stages for better UX
-        progress.update(task, description=f"[{PRIMARY}]📂 Reading project structure...")
-        time.sleep(0.5)
+        # Display results
+        if report['summary']['issues'] == 0:
+            console.print(Panel(
+                f"[green]✓ No security issues detected![/green]\n\n"
+                f"Files scanned: [bold]{report['summary']['files']}[/bold]",
+                title=f"[bold green]Clean Audit[/bold green]",
+                border_style="green"
+            ))
+        else:
+            console.print(Panel(
+                f"Files scanned: [bold]{report['summary']['files']}[/bold]\n"
+                f"Issues found: [bold red]{report['summary']['issues']}[/bold red]\n\n"
+                f"[yellow]⚠ Review .kylo/state.json for detailed findings[/yellow]",
+                title=f"[bold yellow]Audit Results[/bold yellow]",
+                border_style="yellow"
+            ))
         
-        progress.update(task, description=f"[{PRIMARY}]🔍 Analyzing code patterns...")
-        time.sleep(0.5)
-        
-        progress.update(task, description=f"[{PRIMARY}]🛡️ Running security checks...")
-        report = audit_path(target_path)
-        
-        progress.update(task, description=f"[{ACCENT}]✓ Audit complete!")
-    
-    # Display results
-    console.print(f"\n[bold {ACCENT}]Audit Results[/bold {ACCENT}]")
-    console.print(f"Files scanned: [bold]{report['summary']['files']}[/bold]")
-    console.print(f"Issues found: [bold]{report['summary']['issues']}[/bold]\n")
-    
-    if report['summary']['issues'] > 0:
-        console.print(f"[yellow]⚠ Review .kylo/state.json for detailed findings[/yellow]")
-    else:
-        console.print(f"[green]✓ No security issues detected![/green]")
-    
-    if ctx.obj.get('verbose'):
-        console.print(f"\n[dim]{json.dumps(report, indent=2)}[/dim]")
+        if ctx.obj.get('verbose'):
+            console.print(f"\n[dim]{json.dumps(report, indent=2)}[/dim]")
+            
+    except AuditError as e:
+        console.print(f"\n[red]{str(e)}[/red]")
+    except Exception as e:
+        console.print(f"\n[red]❌ Unexpected error: {str(e)}[/red]")
+        if ctx.obj.get('verbose'):
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
 
 @cli.command()
@@ -274,26 +398,42 @@ def secure(ctx, target):
     """Run security hardening on a target"""
     print_banner()
     
+    # Check if .kylo directory exists
+    kylo_dir = Path(os.getcwd()) / '.kylo'
+    if not kylo_dir.exists():
+        console.print(Panel(
+            "[yellow]⚠ KYLO not initialized in this directory[/yellow]\n\n"
+            "Please run [bold]kylo init[/bold] first to set up your project.",
+            border_style="yellow"
+        ))
+        return
+    
     console.print(f"\n[{PRIMARY}]Running security analysis on:[/{PRIMARY}] [bold]{target}[/bold]\n")
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task(f"[{PRIMARY}]🔒 Initializing security scanner...", total=None)
-        time.sleep(0.3)
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task(f"[{PRIMARY}]🔒 Initializing security scanner...", total=None)
+            time.sleep(0.3)
+            
+            progress.update(task, description=f"[{PRIMARY}]🔍 Deep code analysis...")
+            time.sleep(0.5)
+            
+            progress.update(task, description=f"[{PRIMARY}]🛡️ Checking vulnerabilities...")
+            secure_target(target)
+            
+            progress.update(task, description=f"[{ACCENT}]✓ Security scan complete!")
         
-        progress.update(task, description=f"[{PRIMARY}]🔍 Deep code analysis...")
-        time.sleep(0.5)
+        console.print(f"\n[green]✓ Security analysis finished[/green]")
+        console.print(f"[dim]Check .kylo/state.json for recommendations[/dim]")
         
-        progress.update(task, description=f"[{PRIMARY}]🛡️ Checking vulnerabilities...")
-        secure_target(target)
-        
-        progress.update(task, description=f"[{ACCENT}]✓ Security scan complete!")
-    
-    console.print(f"\n[green]✓ Security analysis finished[/green]")
-    console.print(f"[dim]Check .kylo/state.json for recommendations[/dim]")
+    except AuditError as e:
+        console.print(f"\n[red]{str(e)}[/red]")
+    except Exception as e:
+        console.print(f"\n[red]❌ Error during security scan: {str(e)}[/red]")
 
 
 if __name__ == '__main__':

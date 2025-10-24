@@ -3,12 +3,19 @@ import ast
 import json
 import time
 import re
+from pathlib import Path
 from .utils import load_json, save_json
 
 STATE_DIR_NAME = '.kylo'
 STATE_FILE = 'state.json'
+CONTEXT_FILE = 'context.json'
 
 STOPWORDS = set(["the","and","or","to","a","of","in","for","is","with","on","that","this"])
+
+
+class AuditError(Exception):
+    """Custom exception for audit errors"""
+    pass
 
 
 def init_project(cwd):
@@ -36,6 +43,17 @@ def init_project(cwd):
     # create initial state
     state = {"files": {}, "generated": time.time()}
     save_json(os.path.join(state_dir, STATE_FILE), state)
+    
+    # create initial context
+    context = {
+        "project_initialized": time.time(),
+        "total_audits": 0,
+        "last_audit": None,
+        "files_tracked": {},
+        "vulnerability_history": []
+    }
+    save_json(os.path.join(state_dir, CONTEXT_FILE), context)
+    
     print(f"Initialized kylo state at {state_dir}")
 
 
@@ -56,6 +74,108 @@ def _extract_readme_keywords(readme_path):
         if len(out) >= 20:
             break
     return out
+
+
+def validate_audit_target(path):
+    """Validate the audit target and return list of Python files to audit"""
+    if not os.path.exists(path):
+        raise AuditError(f"❌ Path does not exist: {path}")
+    
+    python_files = []
+    
+    if os.path.isfile(path):
+        if not path.endswith('.py'):
+            raise AuditError(f"❌ Invalid file type: {path}\n   Only .py files are supported. Got: {os.path.splitext(path)[1]}")
+        python_files.append(path)
+    elif os.path.isdir(path):
+        # Walk directory to find Python files
+        for root, dirs, files in os.walk(path):
+            # Skip hidden directories and common non-code directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'venv', '.venv', 'env']]
+            
+            for f in files:
+                if f.endswith('.py'):
+                    python_files.append(os.path.join(root, f))
+        
+        if not python_files:
+            raise AuditError(f"❌ No Python files found in: {path}\n   Make sure the directory contains .py files")
+    else:
+        raise AuditError(f"❌ Invalid target: {path}\n   Must be a .py file or directory")
+    
+    return python_files
+
+
+def update_context(cwd, files_audited, total_issues):
+    """Update the context file with audit information"""
+    state_dir = os.path.join(cwd, STATE_DIR_NAME)
+    context_path = os.path.join(state_dir, CONTEXT_FILE)
+    
+    context = load_json(context_path) or {
+        "project_initialized": time.time(),
+        "total_audits": 0,
+        "last_audit": None,
+        "files_tracked": {},
+        "vulnerability_history": []
+    }
+    
+    # Update audit count
+    context["total_audits"] += 1
+    context["last_audit"] = time.time()
+    
+    # Update files tracked
+    for file_path in files_audited:
+        if file_path not in context["files_tracked"]:
+            context["files_tracked"][file_path] = {
+                "first_seen": time.time(),
+                "audit_count": 0,
+                "last_issues": 0
+            }
+        
+        context["files_tracked"][file_path]["audit_count"] += 1
+        context["files_tracked"][file_path]["last_audited"] = time.time()
+        context["files_tracked"][file_path]["last_issues"] = files_audited[file_path]
+    
+    # Add to vulnerability history
+    context["vulnerability_history"].append({
+        "timestamp": time.time(),
+        "total_issues": total_issues,
+        "files_audited": len(files_audited)
+    })
+    
+    # Keep only last 50 history entries
+    if len(context["vulnerability_history"]) > 50:
+        context["vulnerability_history"] = context["vulnerability_history"][-50:]
+    
+    save_json(context_path, context)
+    return context
+
+
+def get_context_summary(cwd):
+    """Get a summary of past audits from context"""
+    state_dir = os.path.join(cwd, STATE_DIR_NAME)
+    context_path = os.path.join(state_dir, CONTEXT_FILE)
+    
+    context = load_json(context_path)
+    if not context or context.get("total_audits", 0) == 0:
+        return None
+    
+    last_audit = context.get("last_audit")
+    if last_audit:
+        days_ago = (time.time() - last_audit) / 86400
+        if days_ago < 1:
+            time_str = "today"
+        elif days_ago < 2:
+            time_str = "yesterday"
+        else:
+            time_str = f"{int(days_ago)} days ago"
+    else:
+        time_str = "never"
+    
+    return {
+        "total_audits": context.get("total_audits", 0),
+        "last_audit_str": time_str,
+        "files_tracked": len(context.get("files_tracked", {}))
+    }
 
 
 def audit_file(path, readme_keywords=None):
@@ -121,12 +241,20 @@ def audit_file(path, readme_keywords=None):
                 'goals': readme_keywords or [],
                 'file': path
             }
-            gemini_issues = analyze_code_security(src, context, force=force)
-            # Tag Gemini issues and append
-            for gi in gemini_issues:
-                gi['source'] = 'gemini'
-                gi.setdefault('file', path)
-                merged.append(gi)
+            try:
+                gemini_issues = analyze_code_security(src, context, force=force)
+                # Tag Gemini issues and append
+                for gi in gemini_issues:
+                    gi['source'] = 'gemini'
+                    gi.setdefault('file', path)
+                    merged.append(gi)
+            except Exception as gemini_error:
+                # AI service unavailable - continue with local analysis
+                print(f"⚠️  AI analysis unavailable: {gemini_error}")
+                print("   Continuing with local security scanning...")
+    except ImportError:
+        # gemini_analyzer not available
+        pass
     except Exception:
         pass
 
@@ -136,6 +264,14 @@ def audit_file(path, readme_keywords=None):
 def audit_path(path):
     path = os.path.abspath(path)
     cwd = os.getcwd()
+    
+    # Validate target first
+    try:
+        targets = validate_audit_target(path)
+    except AuditError as e:
+        print(str(e))
+        return {"error": str(e), "scanned": [], "summary": {"files": 0, "issues": 0}}
+    
     readme = os.path.join(cwd, 'README.md')
     keywords = _extract_readme_keywords(readme)
 
@@ -144,31 +280,59 @@ def audit_path(path):
     state_path = os.path.join(state_dir, STATE_FILE)
     state = load_json(state_path) or {"files": {}, "generated": time.time()}
 
-    report = {"scanned": [], "summary": {"files": 0, "issues": 0}}
+    # Show context summary if available
+    context_summary = get_context_summary(cwd)
+    if context_summary:
+        print(f"\n📊 Audit History:")
+        print(f"   Total audits: {context_summary['total_audits']}")
+        print(f"   Last audit: {context_summary['last_audit_str']}")
+        print(f"   Files tracked: {context_summary['files_tracked']}\n")
 
-    targets = []
-    if os.path.isfile(path) and path.endswith('.py'):
-        targets = [path]
-    else:
-        for root, dirs, files in os.walk(path):
-            for f in files:
-                if f.endswith('.py'):
-                    targets.append(os.path.join(root, f))
+    report = {"scanned": [], "summary": {"files": 0, "issues": 0}}
+    files_audited = {}
+
+    print(f"🔍 Scanning {len(targets)} Python file(s)...\n")
 
     for t in targets:
-        issues = audit_file(t, readme_keywords=keywords)
-        state['files'][t] = {"last_scanned": time.time(), "issues": issues}
-        report['scanned'].append({"file": t, "issues_count": len(issues)})
-        report['summary']['files'] += 1
-        report['summary']['issues'] += len(issues)
+        try:
+            issues = audit_file(t, readme_keywords=keywords)
+            state['files'][t] = {"last_scanned": time.time(), "issues": issues}
+            report['scanned'].append({"file": t, "issues_count": len(issues)})
+            report['summary']['files'] += 1
+            report['summary']['issues'] += len(issues)
+            files_audited[t] = len(issues)
+            
+            # Print per-file summary
+            if len(issues) > 0:
+                print(f"❌ {t}: {len(issues)} issue(s) found")
+            else:
+                print(f"✅ {t}: No issues detected")
+        except Exception as e:
+            print(f"⚠️  Error scanning {t}: {e}")
+            continue
 
     state['generated'] = time.time()
     save_json(state_path, state)
+    
+    # Update context with this audit
+    update_context(cwd, files_audited, report['summary']['issues'])
+    
+    print(f"\n{'='*50}")
+    print(f"📊 Audit Complete")
+    print(f"{'='*50}")
+    print(f"Files scanned: {report['summary']['files']}")
+    print(f"Total issues: {report['summary']['issues']}")
+    print(f"\n💾 Report saved to: {state_path}")
+    
     return report
 
 
 def secure_target(target):
     print(f"Running security checks on {target} (prototype)")
-    report = audit_path(target)
-    print(f"Scanned {report['summary']['files']} files, found {report['summary']['issues']} issues")
-    print("Review .kylo/state.json for details and line-level suggestions.")
+    try:
+        report = audit_path(target)
+        if "error" in report:
+            return
+        print(f"\nReview .kylo/state.json for detailed findings and fix suggestions.")
+    except Exception as e:
+        print(f"❌ Error during security scan: {e}")

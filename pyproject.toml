@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "AI-powered security code auditor and project alignment validator"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {file = "LICENSE"}
+license = {text = "MIT"}
 authors = [
     {name = "Leon Musk", email = "alabimuiz0@gmail.com"}
 ]
@@ -16,12 +16,12 @@ keywords = ["security", "code-audit", "vulnerability-scanner", "static-analysis"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -48,4 +48,10 @@ kylo = "kylo.cli:cli"
 Homepage = "https://kylo.pxxl.click"
 Documentation = "https://kylo.pxxl.click"
 Repository = "https://github.com/Shizzysagacious/kylo"
-Issues = "https://github.com/yourusername/kylo/issues"
+Issues = "https://github.com/Shizzysagacious/kylo/issues"
+
+[tool.setuptools]
+packages = ["kylo"]
+
+[tool.setuptools.package-data]
+kylo = ["py.typed"]
