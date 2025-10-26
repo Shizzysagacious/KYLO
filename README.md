@@ -7,15 +7,15 @@
 
 **KYLO** is an AI-powered security code auditor that helps developers ship safer code. It performs static analysis, detects vulnerabilities, and aligns your codebase with your project goals—all from the command line.
 
-## ✨ Features
+## Features
 
-- 🔍 **AST-Based Security Scanning** — Detects dangerous functions (`eval`, `exec`), SQL injection risks, and common vulnerabilities
-- 🛡️ **Advanced Security Checks** — Finds hardcoded secrets, weak crypto, auth risks, and more
-- 📊 **Project Alignment** — Validates code against your README goals and requirements
-- 🔒 **Privacy-First** — Encrypted local storage for sensitive data
-- 🎨 **Beautiful Terminal UI** — Rich, colorful output with progress indicators
-- 📈 **Usage Tracking** — Monitor audits and scans with built-in analytics
-- ⚡ **Zero-Config** — Works out of the box, no API keys required for basic scanning
+-  **AST-Based Security Scanning** — Detects dangerous functions (`eval`, `exec`), SQL injection risks, and common vulnerabilities
+-  **Advanced Security Checks** — Finds hardcoded secrets, weak crypto, auth risks, and more
+-  **Project Alignment** — Validates code against your README goals and requirements
+-  **Privacy-First** — Encrypted local storage for sensitive data
+-  **Beautiful Terminal UI** — Rich, colorful output with progress indicators
+-  **Usage Tracking** — Monitor audits and scans with built-in analytics
+
 
 ## 🚀 Installation
 
@@ -79,33 +79,7 @@ Protect sensitive operations with an admin token:
 ```bash
 kylo config set-admin-token
 ```
-
-### Storing API Keys (Optional)
-
-For advanced features, you can store API keys securely:
-
-```bash
-kylo config set-api-key gemini
-```
-
-All keys are encrypted using hardware-bound encryption and stored in `.kylo/secure/`.
-
-### Environment Variables
-
-Customize KYLO's behavior with environment variables:
-
-```bash
-# Rate limits (requests per hour)
-export KYLO_RATE_LIMIT_AUDITS=100
-export KYLO_RATE_LIMIT_SECURE=50
-
-# CLI colors
-export KYLO_CLI_PRIMARY_COLOR=magenta
-export KYLO_CLI_ACCENT_COLOR=purple
-
-# Logging
-export KYLO_LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
-```
+`
 
 ## 🛡️ Security Checks
 
@@ -138,11 +112,6 @@ kylo -v audit backend/
 kylo secure api/auth.py
 ```
 
-### List stored API keys
-
-```bash
-kylo config list-keys
-```
 
 ## 🎨 Terminal UI
 
@@ -203,7 +172,7 @@ Contributions are welcome! Here's how:
 ### Setup
 
 ```bash
-git clone https://github.com/yourusername/kylo.git
+git clone https://github.com/Shizzysagacious/kylo.git
 cd kylo
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
