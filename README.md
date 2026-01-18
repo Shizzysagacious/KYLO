@@ -64,11 +64,6 @@ kylo audit src/
 kylo secure backend/
 ```
 
-### 4. View usage statistics
-
-```bash
-kylo stats
-```
 
 ## 🔧 Configuration
 
